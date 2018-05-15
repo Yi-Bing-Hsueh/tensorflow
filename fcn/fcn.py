@@ -52,6 +52,27 @@ def valid(logits, annotation):
 	valid_logits = tf.gather_nd(params=logits, indices=valid_indices)
 
 	return valid_logits, valid_labels
+	
+# get bilinear weights	
+def get_deconv_filter(f_shape):
+	width = f_shape[0]
+	height = f_shape[1]
+	f = ceil(width/2.0)
+	c = (2 * f - 1 - f % 2) / (2.0 * f)
+	bilinear = np.zeros([f_shape[0], f_shape[1]])
+	for x in range(width):
+		for y in range(height):
+			value = (1 - abs(x / f - c)) * (1 - abs(y / f - c))
+			bilinear[x, y] = value
+	weights = np.zeros(f_shape)
+	for i in range(f_shape[2]):
+		weights[:, :, i, i] = bilinear
+
+	init = tf.constant_initializer(value=weights,
+								   dtype=tf.float32)
+	var = tf.get_variable(name="convt_weights", initializer=init,
+						  shape=weights.shape)
+	return var
 
 # FCN network according to paper Fully Convolutional Networks for Semantic Segmentation
 # train both fcn and vgg
@@ -69,11 +90,8 @@ def fcn_paper(inputs_32s, inputs_16s, inputs_8s, img_height, img_width, is_train
 		biases = tf.get_variable('biases', shape=[num_classes], dtype=tf.float32, initializer=tf.constant_initializer(0.0) )
 		conv = tf.nn.conv2d(inputs_32s, weights, strides=[1,1,1,1], padding='SAME')
 		logits_32s = tf.nn.bias_add(conv, biases)	
-	
-		convt_weights = tf.get_variable('convt_weights', shape = [4,4,num_classes, num_classes], dtype = tf.float32, 
-			# initializer=tf.truncated_normal_initializer(stddev=0.05,dtype=tf.float32)
-			initializer=tf.glorot_normal_initializer()
-		)
+		
+		convt_weights = get_deconv_filter([4,4,num_classes, num_classes])
 		inputs_16s_shape = tf.shape(inputs_16s)
 		logits_32s_upsampled = tf.nn.conv2d_transpose(
 			value=logits_32s,
@@ -93,10 +111,7 @@ def fcn_paper(inputs_32s, inputs_16s, inputs_8s, img_height, img_width, is_train
 		
 		fused_logits_16s = logits_16s + logits_32s_upsampled
 		
-		convt_weights = tf.get_variable('convt_weights', shape = [4,4,num_classes, num_classes], dtype = tf.float32, 
-			# initializer=tf.truncated_normal_initializer(stddev=0.05,dtype=tf.float32)
-			initializer=tf.glorot_normal_initializer()
-		)
+		convt_weights = get_deconv_filter([4,4,num_classes, num_classes])
 		inputs_8s_shape = tf.shape(inputs_8s)
 		logits_16s_upsampled = tf.nn.conv2d_transpose(
 			value=fused_logits_16s,
@@ -115,11 +130,8 @@ def fcn_paper(inputs_32s, inputs_16s, inputs_8s, img_height, img_width, is_train
 		logits_8s = tf.nn.bias_add(conv, biases)	
 		
 		fused_logits_8s = logits_8s + logits_16s_upsampled
-		
-		convt_weights = tf.get_variable('convt_weights', shape = [16,16,num_classes, num_classes], dtype = tf.float32, 
-			# initializer=tf.truncated_normal_initializer(stddev=0.05,dtype=tf.float32)
-			initializer=tf.glorot_normal_initializer()
-		)
+	
+		convt_weights = get_deconv_filter([16,16,num_classes, num_classes])
 		logits_8s_upsampled = tf.nn.conv2d_transpose(
 			value=fused_logits_8s,
 			filter=convt_weights,
@@ -157,11 +169,7 @@ def fcn_light(inputs_32s, inputs_16s, inputs_8s, img_height, img_width, is_train
 		logits_32s = tf.nn.bias_add(conv, biases)	
 		
 	with tf.variable_scope('fcn/32s/convt') as scope:	
-		convt_weights = tf.get_variable('weights', shape = [4,4,num_classes, num_classes], dtype = tf.float32, 
-			# initializer=tf.truncated_normal_initializer(stddev=0.05,dtype=tf.float32)
-			initializer=tf.glorot_normal_initializer()
-		)
-		
+		convt_weights = get_deconv_filter([4,4,num_classes, num_classes])
 		inputs_16s_shape = tf.shape(inputs_16s)
 		logits_32s_upsampled = tf.nn.conv2d_transpose(
 			value=logits_32s,
@@ -190,11 +198,7 @@ def fcn_light(inputs_32s, inputs_16s, inputs_8s, img_height, img_width, is_train
 		fused_logits_16s = logits_16s + logits_32s_upsampled
 	
 	with tf.variable_scope('fcn/16s/convt') as scope:	
-		convt_weights = tf.get_variable('weights', shape = [4,4,num_classes, num_classes], dtype = tf.float32, 
-			# initializer=tf.truncated_normal_initializer(stddev=0.05,dtype=tf.float32)
-			initializer=tf.glorot_normal_initializer()
-		)
-		
+		convt_weights = get_deconv_filter([4,4,num_classes, num_classes])
 		inputs_8s_shape = tf.shape(inputs_8s)
 		logits_16s_upsampled = tf.nn.conv2d_transpose(
 			value=fused_logits_16s,
@@ -223,11 +227,7 @@ def fcn_light(inputs_32s, inputs_16s, inputs_8s, img_height, img_width, is_train
 		fused_logits_8s = logits_8s + logits_16s_upsampled
 	
 	with tf.variable_scope('fcn/8s/convt') as scope:	
-		convt_weights = tf.get_variable('weights', shape = [4,4,num_classes, num_classes], dtype = tf.float32, 
-			# initializer=tf.truncated_normal_initializer(stddev=0.05,dtype=tf.float32)
-			initializer=tf.glorot_normal_initializer()
-		)
-		
+		convt_weights = get_deconv_filter([16,16,num_classes, num_classes])
 		logits_8s_upsampled = tf.nn.conv2d_transpose(
 			value=fused_logits_8s,
 			filter=convt_weights,
