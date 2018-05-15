@@ -5,6 +5,7 @@ import sys
 import os
 import skimage.io
 import time
+from math import ceil
 
 import pydensecrf.densecrf as dcrf
 from pydensecrf.utils import compute_unary, create_pairwise_bilateral, create_pairwise_gaussian, softmax_to_unary
@@ -287,9 +288,11 @@ def train(image_tfrecords_file, epochs, batch_size, retrain=False, restore_step=
 		trainable_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'fcn')
 	
 	with tf.variable_scope("opt_vars"): #会根据var_list建立一些variables
-		# train_step = tf.train.AdamOptimizer(learning_rate=0.00001).minimize(loss=loss_mean)
-		train_step = tf.train.MomentumOptimizer(0.00001, 0.9).minimize(
+		train_step = tf.train.AdamOptimizer(learning_rate=0.00001).minimize(
 			loss=loss_mean, global_step=global_step, var_list=trainable_variables)
+			
+		# train_step = tf.train.MomentumOptimizer(0.00001, 0.9).minimize(
+			# loss=loss_mean, global_step=global_step, var_list=trainable_variables)
 	
 	# opt_vars won't be in TRAINABLE_VARIABLES, but vgg will.
 	
